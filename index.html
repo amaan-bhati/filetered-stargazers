@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>GitHub Stargazers Fetcher</title>
+  <style>
+    body {
+      background-color: #0d1117;
+      color: #c9d1d9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      display: flex;
+      justify-content: center;
+      padding-top: 60px;
+    }
+
+    .container {
+      background-color: #161b22;
+      padding: 30px;
+      border-radius: 10px;
+      width: 500px;
+      box-shadow: 0 0 20px rgba(0,0,0,0.6);
+    }
+
+    h2 {
+      margin-bottom: 20px;
+      color: #58a6ff;
+    }
+
+    input {
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 15px;
+      background-color: #0d1117;
+      border: 1px solid #30363d;
+      color: #c9d1d9;
+      border-radius: 6px;
+    }
+
+    button {
+      width: 100%;
+      padding: 10px;
+      margin-top: 10px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    .btn-primary {
+      background-color: #238636;
+      color: white;
+    }
+
+    .btn-secondary {
+      background-color: #1f6feb;
+      color: white;
+    }
+
+    button:hover {
+      opacity: 0.9;
+    }
+
+    .status {
+      margin-top: 15px;
+      font-size: 14px;
+      color: #8b949e;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>GitHub Stargazers Fetcher</h2>
+
+    <input type="text" id="repoUrl" placeholder="https://github.com/owner/repo" />
+    <input type="password" id="patToken" placeholder="GitHub Personal Access Token" />
+
+    <input type="date" id="startDate" />
+    <input type="date" id="endDate" />
+
+    <button class="btn-primary" onclick="fetchAllStars()">Fetch All Stargazers</button>
+    <button class="btn-secondary" onclick="fetchByDateRange()">Fetch Stargazers By Date Range</button>
+
+    <div class="status" id="status"></div>
+  </div>
+
+<script>
+function parseRepo(url) {
+  const parts = url.replace("https://github.com/", "").split("/");
+  return { owner: parts[0], repo: parts[1] };
+}
+
+async function fetchStargazers(owner, repo, token) {
+  let page = 1;
+  let results = [];
+  let hasMore = true;
+
+  while (hasMore) {
+    document.getElementById("status").innerText = "Fetching page " + page + "...";
+
+    const res = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/stargazers?per_page=100&page=${page}`,
+      {
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Accept": "application/vnd.github.star+json"
+        }
+      }
+    );
+
+    if (!res.ok) {
+      throw new Error("API Error: " + res.status);
+    }
+
+    const data = await res.json();
+
+    if (data.length === 0) {
+      hasMore = false;
+    } else {
+      results = results.concat(data);
+      page++;
+    }
+  }
+
+  return results;
+}
+
+function downloadCSV(data, filename) {
+  const csvContent = "data:text/csv;charset=utf-8,"
+    + "username,starred_at\n"
+    + data.map(e => `${e.username},${e.starred_at}`).join("\n");
+
+  const encodedUri = encodeURI(csvContent);
+  const link = document.createElement("a");
+  link.setAttribute("href", encodedUri);
+  link.setAttribute("download", filename);
+  document.body.appendChild(link);
+  link.click();
+}
+
+async function fetchAllStars() {
+  try {
+    const repoUrl = document.getElementById("repoUrl").value;
+    const token = document.getElementById("patToken").value;
+    const { owner, repo } = parseRepo(repoUrl);
+
+    const stars = await fetchStargazers(owner, repo, token);
+
+    const formatted = stars.map(s => ({
+      username: s.user.login,
+      starred_at: s.starred_at
+    }));
+
+    downloadCSV(formatted, "all_stargazers.csv");
+    document.getElementById("status").innerText = "Done! Download started.";
+  } catch (err) {
+    document.getElementById("status").innerText = err.message;
+  }
+}
+
+async function fetchByDateRange() {
+  try {
+    const repoUrl = document.getElementById("repoUrl").value;
+    const token = document.getElementById("patToken").value;
+    const startDate = new Date(document.getElementById("startDate").value);
+    const endDate = new Date(document.getElementById("endDate").value);
+
+    const { owner, repo } = parseRepo(repoUrl);
+
+    const stars = await fetchStargazers(owner, repo, token);
+
+    const filtered = stars.filter(s => {
+      const starDate = new Date(s.starred_at);
+      return starDate >= startDate && starDate <= endDate;
+    }).map(s => ({
+      username: s.user.login,
+      starred_at: s.starred_at
+    }));
+
+    downloadCSV(filtered, "stargazers_filtered.csv");
+
+    document.getElementById("status").innerText =
+      `Done! Found ${filtered.length} users in selected range.`;
+  } catch (err) {
+    document.getElementById("status").innerText = err.message;
+  }
+}
+</script>
+
+</body>
+</html>
